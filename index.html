@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="te">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>KRITHU AI</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    :root{font-family:system-ui,-apple-system,"Noto Sans Telugu",sans-serif;color:#eef2ff;background:#0b1020}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top,#202b54,#0b1020 55%);min-height:100vh}
+    .wrap{max-width:820px;margin:auto;padding:18px}.brand{display:flex;align-items:center;gap:12px;margin:8px 0 18px}
+    .orb{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#67e8f9,#818cf8 55%,#c084fc);box-shadow:0 0 28px #818cf866}
+    h1{font-size:1.45rem;margin:0}.sub{color:#a5b4fc;font-size:.9rem}
+    .panel{background:#121a2e;border:1px solid #2a3656;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 10px 35px #0002}
+    .chat{height:330px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+    .msg{padding:11px 13px;border-radius:14px;max-width:90%;white-space:pre-wrap;line-height:1.5}
+    .bot{background:#202c49;align-self:flex-start}.user{background:#4338ca;align-self:flex-end}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}.controls input,.controls textarea{flex:1;min-width:180px}
+    input,textarea,button{font:inherit;border-radius:11px;border:1px solid #34415f;padding:11px;background:#0d1426;color:#eef2ff}
+    button{cursor:pointer;background:#4f46e5;border:0;font-weight:650}button.secondary{background:#25324f}button:focus,input:focus{outline:2px solid #818cf8}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row input{flex:1;min-width:150px}
+    .small{font-size:.88rem;color:#b7c2df}.list{padding-left:20px}.list li{margin:7px 0}
+    .danger{background:#7f1d1d}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#24304c;color:#c7d2fe;font-size:.8rem}
+    @media(max-width:520px){.wrap{padding:12px}.chat{height:300px}.panel{padding:13px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="brand"><div class="orb" aria-hidden="true"></div><div><h1>KRITHU AI</h1><div class="sub">నీ Personal Assistant • తెలుగు</div></div></header>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between"><span class="pill">Prototype v0.1</span><span class="small" id="voiceStatus">Voice సిద్ధంగా ఉంది</span></div>
+    <div class="chat" id="chat" aria-live="polite"></div>
+    <div class="controls" style="margin-top:12px">
+      <input id="message" placeholder="తెలుగులో అడుగు… ఉదా: నా పేరు కృష్ణ" aria-label="సందేశం">
+      <button id="send">పంపు</button><button id="mic" class="secondary" title="మాట్లాడండి">🎙️</button>
+    </div>
+    <div class="small" style="margin-top:8px">గమనిక: ఇది మొదటి demo. Voice recognition కోసం సాధారణంగా internet మరియు Chrome అవసరం.</div>
+  </div>
+  <div class="panel">
+    <h2 style="font-size:1.08rem;margin-top:0">🧠 నా Memory</h2>
+    <div class="row"><input id="memoryInput" placeholder="ఉదా: నాకు తెలుగు సమాధానాలు ఇష్టం"><button id="saveMemory">గుర్తుంచుకో</button></div>
+    <ul id="memoryList" class="list"></ul>
+    <button id="clearMemory" class="secondary">Memory మొత్తం తొలగించు</button>
+  </div>
+  <div class="panel">
+    <h2 style="font-size:1.08rem;margin-top:0">📅 Reminders</h2>
+    <div class="row"><input id="reminderText" placeholder="ఏ పని గుర్తు చేయాలి?"><input id="reminderTime" type="datetime-local" aria-label="తేదీ మరియు సమయం"><button id="addReminder">జోడించు</button></div>
+    <ul id="reminderList" class="list"></ul>
+    <div class="small">ఈ demoలో reminders పనిచేయాలంటే app/browser తెరిచి ఉండాలి. Browser notification అనుమతి అడగవచ్చు; app మూసివేసినా ఖచ్చితంగా alert రావాలంటే తర్వాత backend/push notification జోడించాలి.</div>
+  </div>
+  <div class="panel">
+    <h2 style="font-size:1.08rem;margin-top:0">🔒 Privacy & Projects</h2>
+    <p class="small">Memory, reminders ఈ browserలోనే localStorageలో నిల్వ ఉంటాయి. ఈ demoలో SMVJ మరియు EarnVerse Teluguకి ఎలాంటి account access లేదు; అవి వేర్వేరు projectsగానే ఉంటాయి.</p>
+    <button class="secondary" id="exportData">నా data export</button> <button class="secondary" id="clearAll">అన్ని local data తొలగించు</button>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const get = (key, fallback=[]) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+const set = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+let memories = get('krithu_memories');
+let reminders = get('krithu_reminders');
+let recognition = null;
+function say(text) {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.lang = 'te-IN'; u.rate = 1;
+  window.speechSynthesis.speak(u);
+}
+function addMsg(text, who='bot') {
+  const d = document.createElement('div'); d.className = 'msg '+who; d.textContent = text;
+  $('chat').appendChild(d); $('chat').scrollTop = $('chat').scrollHeight;
+}
+function answer(input) {
+  const s = input.trim(); const low = s.toLowerCase();
+  if (!s) return;
+  addMsg(s, 'user');
+  let reply = '';
+  if (/^(help|సహాయం|ఏం చేయగలవు)/i.test(s)) {
+    reply = 'నేను ఇప్పటికి basic demo: memory save చేయడం, reminders జోడించడం, సమయం చెప్పడం, కొన్ని సాధారణ commands చేయగలను. తర్వాత real AI brain/API జోడించవచ్చు.';
+  } else if (low.includes('సమయం') || low.includes('time')) {
+    reply = 'ఇప్పటి తేదీ, సమయం: ' + new Date().toLocaleString('te-IN');
+  } else if (s.startsWith('గుర్తుంచుకో ')) {
+    const item = s.slice('గుర్తుంచుకో '.length).trim();
+    if (item) { memories.push(item); set('krithu_memories', memories); renderMemories(); reply = 'సరే, ఈ browserలో గుర్తుంచుకున్నాను: ' + item; }
+    else reply = 'గుర్తుంచుకోవాల్సిన విషయాన్ని కూడా చెప్పు.';
+  } else if (low.includes('నా గురించి') || low.includes('నా memory') || low.includes('నన్ను గురించి')) {
+    reply = memories.length ? 'నువ్వు సేవ్ చేసిన విషయాలు:\n• ' + memories.join('\n• ') : 'ఇంకా memoryలో ఏమీ సేవ్ చేయలేదు. కింద Memory boxలో ఒక విషయం జోడించు.';
+  } else if (low.includes('రిమైండర్') || low.includes('reminder')) {
+    reply = 'కింద Reminders విభాగంలో పనిని, తేదీ/సమయాన్ని ఎంచుకుని జోడించు.';
+  } else if (low.includes('smvj')) {
+    reply = 'SMVJ ఒక ప్రత్యేక projectగా ఉంచుతాం. ఈ demoకి smvj.in login లేదా access లేదు.';
+  } else if (low.includes('earnverse') || low.includes('youtube')) {
+    reply = 'EarnVerse Telugu వేరే projectగా ఉంచుతాం. ఈ demoకి YouTube account access లేదు.';
+  } else {
+    reply = 'నీ మాట అర్థమైంది: "' + s + '". ఇది starter prototype కాబట్టి ఇంకా పూర్తి AI model కలపలేదు. ఇప్పుడు memory/reminders ఉపయోగించవచ్చు; తర్వాత AI API లేదా local model కనెక్ట్ చేద్దాం.';
+  }
+  addMsg(reply, 'bot'); say(reply);
+}
+$('send').onclick = () => { answer($('message').value); $('message').value=''; $('message').focus(); };
+$('message').addEventListener('keydown', e => { if (e.key === 'Enter') $('send').click(); });
+$('mic').onclick = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { $('voiceStatus').textContent = 'ఈ browserలో voice recognition లేదు'; addMsg('Voice recognitionకు Android Chrome లేదా మద్దతు ఉన్న browser ప్రయత్నించు.'); return; }
+  if (!recognition) { recognition = new SR(); recognition.lang = 'te-IN'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+    recognition.onstart = () => $('voiceStatus').textContent = 'వింటున్నాను…';
+    recognition.onerror = e => $('voiceStatus').textContent = 'Voice error: ' + e.error;
+    recognition.onend = () => $('voiceStatus').textContent = 'Voice సిద్ధంగా ఉంది';
+    recognition.onresult = e => { const t=e.results[0][0].transcript; $('message').value=t; answer(t); $('message').value=''; };
+  }
+  try { recognition.start(); } catch(e) { $('voiceStatus').textContent = 'మళ్లీ ప్రయత్నించు'; }
+};
+function renderMemories() {
+  $('memoryList').replaceChildren();
+  memories.forEach((m,i) => { const li=document.createElement('li'); li.textContent=m+' ';
+    const b=document.createElement('button'); b.className='secondary'; b.textContent='తొలగించు'; b.onclick=()=>{memories.splice(i,1);set('krithu_memories',memories);renderMemories();}; li.appendChild(b); $('memoryList').appendChild(li); });
+}
+function renderReminders() {
+  $('reminderList').replaceChildren();
+  reminders.sort((a,b)=>a.when-b.when).forEach((r,i) => { const li=document.createElement('li');
+    li.textContent=r.text+' — '+new Date(r.when).toLocaleString('te-IN')+(r.done?' (పూర్తయింది)':' ');
+    if(!r.done){const b=document.createElement('button');b.className='secondary';b.textContent='పూర్తి';b.onclick=()=>{r.done=true;set('krithu_reminders',reminders);renderReminders();};li.appendChild(b);}
+    const d=document.createElement('button');d.className='danger';d.textContent='తొలగించు';d.style.marginLeft='6px';d.onclick=()=>{reminders.splice(i,1);set('krithu_reminders',reminders);renderReminders();};li.appendChild(d);$('reminderList').appendChild(li);
+  });
+}
+$('saveMemory').onclick=()=>{const v=$('memoryInput').value.trim();if(v){memories.push(v);set('krithu_memories',memories);renderMemories();$('memoryInput').value='';addMsg('Memoryలో సేవ్ చేశాను: '+v);}};
+$('clearMemory').onclick=()=>{if(confirm('Memory మొత్తం తొలగించాలా?')){memories=[];set('krithu_memories',memories);renderMemories();}};
+$('addReminder').onclick=async()=>{const text=$('reminderText').value.trim(), when=$('reminderTime').value;if(!text||!when){alert('పని మరియు తేదీ/సమయం రెండూ ఇవ్వు.');return;}
+  const ms=new Date(when).getTime();if(ms<=Date.now()){alert('భవిష్యత్తు తేదీ/సమయం ఎంచుకో.');return;}
+  reminders.push({text,when:ms,done:false,alerted:false});set('krithu_reminders',reminders);renderReminders();$('reminderText').value='';
+  if('Notification' in window && Notification.permission==='default'){try{await Notification.requestPermission();}catch{}}
+};
+function checkReminders(){
+  let changed=false; const now=Date.now();
+  reminders.forEach(r=>{if(!r.done&&!r.alerted&&r.when<=now){r.alerted=true;changed=true;addMsg('⏰ Reminder: '+r.text);say('రిమైండర్. '+r.text);if('Notification' in window&&Notification.permission==='granted'){try{new Notification('KRITHU AI Reminder',{body:r.text});}catch{}}}});
+  if(changed){set('krithu_reminders',reminders);renderReminders();}
+}
+$('exportData').onclick=()=>{const data={memories,reminders,exportedAt:new Date().toISOString()};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='krithu-ai-data.json';a.click();URL.revokeObjectURL(a.href);};
+$('clearAll').onclick=()=>{if(confirm('Memory మరియు reminders సహా local data మొత్తం తొలగించాలా?')){localStorage.removeItem('krithu_memories');localStorage.removeItem('krithu_reminders');memories=[];reminders=[];renderMemories();renderReminders();}};
+renderMemories();renderReminders();setInterval(checkReminders,15000);
+addMsg('నమస్కారం! నేను KRITHU AI starter prototype. “సహాయం” అని అడుగు లేదా Memory, Reminders ఉపయోగించు.');
+if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>
